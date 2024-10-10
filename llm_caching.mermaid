@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant U as User
+    participant Q as Query Processor
+    participant C as Cache Layer<br/>(Redis/DynamoDB)
+    participant V as Vector DB<br/>(Pinecone/Weaviate)
+    participant R as Retriever
+    participant A as Augmenter
+    participant LLM as LLM<br/>(GPT-4/Claude)
+    participant M as Metadata Store<br/>(PostgreSQL)
+
+    Note over U,M: Query Phase with Cache
+    U->>Q: Submit Query
+    Q->>C: Check Cache
+
+    alt Cache Hit
+        C->>U: Return Cached Response
+    else Cache Miss
+        Q->>Q: Vectorize Query
+        Q->>V: Search Vectors
+        V->>R: Return Relevant Docs
+        R->>A: Pass for Augmentation
+        A->>LLM: Generate Response
+        LLM->>C: Store in Cache
+        LLM->>U: Return Response
+    end
+
+    Note over U,M: Ingestion Phase with Cache
+    V->>R: New Documents
+    R->>C: Invalidate Related Cache

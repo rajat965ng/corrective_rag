@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant U as User
+    participant Q as Query Processor<br/>(Sentence-BERT)
+    participant V as Vector DB<br/>(Pinecone/Weaviate)
+    participant R as Retriever<br/>(BM25 + Cross-Encoder)
+    participant A as Augmenter<br/>(LangChain)
+    participant LLM as LLM<br/>(GPT-4/Claude)
+    participant KB as Knowledge Base<br/>(PostgreSQL/Elasticsearch)
+
+    Note over U,KB: Stage 1: Retrieval
+    U->>Q: Submit Query<br/>"What are the effects of climate change?"
+    Q->>Q: Vectorize Query<br/>sentence-transformers/all-mpnet-base-v2
+    Q->>V: Search Similar Vectors<br/>cosine_similarity(query_vector, doc_vectors)
+    V->>R: Return Top k Documents
+    R->>R: Rerank with Cross-Encoder<br/>cross-encoder/ms-marco-MiniLM-L-12-v2
+
+    Note over U,KB: Stage 2: Augmentation
+    R->>A: Pass Ranked Documents
+    A->>A: Chunk & Restructure<br/>LangChain TextSplitter
+    A->>KB: Fetch Related Data<br/>SQL: SELECT * FROM climate_data
+    KB->>A: Return Supplementary Info
+    A->>A: Combine & Format Context
+
+    Note over U,KB: Stage 3: Generation
+    A->>LLM: Send Prompt Template + Context
+    LLM->>LLM: Generate Response
+    LLM->>U: Return Formatted Answer

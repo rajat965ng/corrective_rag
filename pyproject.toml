@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "langraph-test-one"
+version = "0.1.0"
+description = ""
+authors = ["Rajat Nigam <rajatnigam89@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langgraph = "^0.2.23"
+langchain = "^0.3.0"
+black = "^24.8.0"
+langchain-community = "^0.3.0"
+langchain-openai = "^0.2.0"
+python-dotenv = "^1.0.1"
+grandalf = "^0.8"
+beautifulsoup4 = "^4.12.3"
+langchain-chroma = "^0.1.4"
+isort = "^5.13.2"
+pytest = "^8.3.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

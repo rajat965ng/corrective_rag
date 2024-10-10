@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant DS as Data Sources<br/>PDFs/Websites/S3/DBs
+    participant C as Crawler/Connector<br/>Selenium/Scrapy/Langchain
+    participant P as Preprocessor<br/>Apache Tika/Unstructured.io
+    participant T as Text Extractor<br/>PyPDF2/BeautifulSoup4
+    participant CL as Cleaner<br/>NLTK/SpaCy/RegEx
+    participant CH as Chunker<br/>LangChain/Haystack
+    participant E as Embedder<br/>SentenceTransformers
+    participant V as Vector DB<br/>Pinecone/Weaviate
+    participant M as Metadata Store<br/>PostgreSQL/MongoDB
+
+    Note over DS,M: Stage 1: Data Collection
+    DS->>C: Raw Data<br/>PDF: arxiv papers<br/>Web: documentation<br/>S3: company files
+    C->>P: Multiple Formats<br/>Apache Tika detects MIME types
+
+    Note over DS,M: Stage 2: Text Extraction
+    P->>T: Route by file type
+    T->>CL: Extract text<br/>PyPDF2 for PDFs<br/>BS4 for HTML
+    CL->>CL: Clean text<br/>SpaCy for NLP tasks<br/>RegEx for patterns
+
+    Note over DS,M: Stage 3: Chunking
+    CL->>CH: Clean text
+    CH->>CH: LangChain RecursiveCharacterTextSplitter<br/>Semantic chunking with overlap
+
+    Note over DS,M: Stage 4: Embedding & Storage
+    CH->>E: Text chunks
+    E->>E: Generate embeddings<br/>all-MiniLM-L6-v2 model
+    E->>V: Store vectors<br/>1536-dimensional vectors
+    E->>M: Store metadata<br/>JSON in PostgreSQL

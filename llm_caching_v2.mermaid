@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant User
+    participant QP as Query Processor<br>(FastAPI Server)
+    participant CL as Cache Layer<br>(Redis)
+    participant VDB as Vector DB<br>(Weaviate)
+    participant Aug as Augmenter<br>(LangChain)
+    participant LLM as LLM<br>(GPT-4)
+    participant Emb as Embedder<br>(OpenAI Ada)
+    participant MS as Metadata Store<br>(PostgreSQL)
+
+    Note over User,MS: Example Query: "What's the best way to implement a binary search?"
+
+    User->>QP: Submit coding query
+    QP->>Emb: Generate embedding for<br>"binary search" query
+    Emb-->>QP: Return 1536-dim vector
+
+    QP->>CL: Check Redis cache with embedding
+    CL->>VDB: Search Weaviate for similar queries
+    VDB-->>CL: Return similar vectors & scores
+    CL->>MS: Fetch response data from PostgreSQL
+    MS-->>CL: Return cached code snippets & explanations
+
+    alt Cache hit (similarity > 0.95)
+        CL-->>QP: Return cached response:<br>Python binary search implementation
+    else Cache miss
+        CL-->>QP: No suitable cache found
+        QP->>Aug: Augment query using LangChain
+        Aug->>VDB: Fetch relevant coding examples<br>from Weaviate
+        VDB-->>Aug: Return context: sorting,<br>time complexity, example arrays
+        Aug-->>QP: Return augmented query with context
+
+        QP->>LLM: Send to GPT-4:<br>Query + coding context
+        LLM-->>QP: Generate detailed response:<br>Code + explanation
+
+        QP->>CL: Cache new response in Redis
+        CL->>Emb: Generate embedding for<br>response using Ada
+        Emb-->>CL: Return response embedding
+        CL->>VDB: Store in Weaviate:<br>Query vector + Response vector
+        CL->>MS: Store in PostgreSQL:<br>Query text, response text,<br>timestamp, metadata
+    end
+
+    QP-->>User: Return binary search<br>implementation & explanation
