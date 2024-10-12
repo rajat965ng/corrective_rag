@@ -15,3 +15,16 @@ class Grade(BaseModel):
         description="Check whether the documents retrieved are relevant to the question asked."
         "If they are relevant then answer 'yes', else 'no'."
     )
+
+
+class HallucinationGrade(BaseModel):
+    bool_score: str = Field(
+        description="Check if the generation is grounded into documents then return 'yes' else 'no'"
+    )
+
+
+class GenerationAnswerGrade(BaseModel):
+    bool_score: str = Field(
+        description="Check whether the generation retrieved are relevant to the question asked."
+        "If they are relevant then answer 'yes', else 'no'."
+    )
