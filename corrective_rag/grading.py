@@ -3,8 +3,19 @@ from typing import Dict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from corrective_rag.constant import WEBSEARCH, GENERATE
-from corrective_rag.state import GraphState, Grade
+from corrective_rag.constant import (
+    WEBSEARCH,
+    GENERATE,
+    USEFUL,
+    NOT_USEFUL,
+    NOT_SUPPORTED,
+)
+from corrective_rag.state import (
+    GraphState,
+    Grade,
+    HallucinationGrade,
+    GenerationAnswerGrade,
+)
 
 system = (
     "As a professional grading assistant find out whether the retrieved documents are relevant to the question "
@@ -48,3 +59,69 @@ def grade_conditional_node(state: GraphState) -> str:
         return WEBSEARCH
     else:
         return GENERATE
+
+
+hallucination_grader = llm.with_structured_output(HallucinationGrade)
+hallucination_grader_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a professional grader. Return 'yes' if the generation is grounded in documents else return 'no'. ",
+        ),
+        (
+            "human",
+            "set of facts: \n\n {documents} \n\n" "LLM generation: {generation}",
+        ),
+    ]
+)
+
+hallucination_grader_prompt_chain = hallucination_grader_prompt | hallucination_grader
+
+
+generation_answer_grader = llm.with_structured_output(GenerationAnswerGrade)
+generation_answer_grader_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a grader assessing whether an answer addresses/resolves a question. \n Give a binary score 'yes' "
+            "or 'no'. 'yes' means that the answer resolves the question.",
+        ),
+        (
+            "human",
+            "User question: \n\n {question} \n\n" "generation: {generation}",
+        ),
+    ]
+)
+
+generation_answer_grader_prompt_chain = (
+    generation_answer_grader_prompt | generation_answer_grader
+)
+
+
+def grade_generation_grounded_in_documents_and_question(state: GraphState) -> str:
+    print("Invoked::::grade_generation_grounded_in_documents_and_question")
+    question = state["question"]
+    documents = state["documents"]
+    generation = state["generation"]
+
+    hallucination_result = hallucination_grader_prompt_chain.invoke(
+        input={"generation": generation, "documents": documents}
+    )
+    print(
+        "hallucination_result.bool_score is {}".format(hallucination_result.bool_score)
+    )
+    if hallucination_result.bool_score == "yes":
+        generation_answer_grader_result = generation_answer_grader_prompt_chain.invoke(
+            input={"generation": generation, "question": question}
+        )
+        print(
+            "generation_answer_grader_result.bool_score is {}".format(
+                generation_answer_grader_result.bool_score
+            )
+        )
+        if generation_answer_grader_result.bool_score == "yes":
+            return USEFUL
+        else:
+            return NOT_USEFUL
+    else:
+        return NOT_SUPPORTED

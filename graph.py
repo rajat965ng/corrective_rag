@@ -2,9 +2,20 @@ from langgraph.constants import END
 from langgraph.graph import StateGraph
 
 from corrective_rag.generate import generate_node
-from corrective_rag.grading import grading_node, grade_conditional_node
+from corrective_rag.grading import (
+    grading_node,
+    grade_conditional_node,
+    grade_generation_grounded_in_documents_and_question,
+)
 from corrective_rag.retriever import retriever_node
-from corrective_rag.constant import RETRIEVER, GENERATE, WEBSEARCH
+from corrective_rag.constant import (
+    RETRIEVER,
+    GENERATE,
+    WEBSEARCH,
+    NOT_SUPPORTED,
+    NOT_USEFUL,
+    USEFUL,
+)
 from corrective_rag.state import GraphState
 from corrective_rag.constant import GRADE_DOCS
 from corrective_rag.websearch import websearch_node
@@ -30,13 +41,15 @@ workflow.add_conditional_edges(
 workflow.add_edge(WEBSEARCH, GENERATE)
 workflow.add_edge(GENERATE, END)
 
+workflow.add_conditional_edges(
+    GENERATE,
+    grade_generation_grounded_in_documents_and_question,
+    {NOT_SUPPORTED: GENERATE, NOT_USEFUL: WEBSEARCH, USEFUL: END},
+)
+
 graph = workflow.compile()
 graph.get_graph().draw_png(output_file_path="graph.jpg")
 
 if __name__ == "__main__":
-    res = graph.invoke(
-        input={
-            "question": "What’s the difference between String, StringBuffer, and StringBuilder?"
-        }
-    )
+    res = graph.invoke(input={"question": "how to cook chicken biryani?"})
     print(res)
