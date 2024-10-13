@@ -1,38 +1,33 @@
-# Building a Corrective RAG System with LangGraph: Enhanced with Web Search
+# Implementing Adaptive RAG: A Step Towards More Intelligent and Flexible AI with LangGraph
 
-In the rapidly evolving world of AI and natural language processing, Retrieval-Augmented Generation (RAG) systems have become a cornerstone for building more intelligent and context-aware applications. Today, we'll explore how to build an advanced corrective RAG system using LangGraph, with a special focus on incorporating web search capabilities for enhanced performance.
+In the rapidly evolving landscape of AI and natural language processing, we're constantly seeking ways to improve the reliability, accuracy, and adaptability of our systems. Today, we're exploring an exciting advancement: Adaptive RAG (Retrieval-Augmented Generation). This implementation, built using LangGraph, takes us a step closer to AI systems that can not only self-reflect and self-improve but also adaptively choose the most appropriate information source based on the input query.
 
-## What is a Corrective RAG System?
+## What is Adaptive RAG?
 
-A corrective RAG system is an advanced version of a traditional RAG system. It not only retrieves relevant information and generates responses but also includes mechanisms to verify, correct, and supplement the retrieved information when necessary. This leads to more accurate, reliable, and up-to-date outputs.
+Adaptive RAG is an extension of the traditional RAG (Retrieval-Augmented Generation) system. While RAG enhances language model outputs by retrieving relevant information from a knowledge base, Adaptive RAG goes further by introducing:
 
-![graph.jpg](graph.jpg)
+1. Query routing to choose between local vectorstore and web search
+2. Self-evaluation of retrieved documents and generated responses
+3. Multiple attempts at generation if initial results are unsatisfactory
+4. Ability to seek additional information when needed
 
-## The Components
+## Components and Workflow
 
-Our corrective RAG system consists of several key components:
+Our Adaptive RAG implementation consists of the following key components:
 
-1. **Retriever**: Fetches relevant documents based on the input question.
-2. **Grader**: Evaluates the relevance of retrieved documents.
-3. **Web Search**: Performs an online search if local documents are insufficient.
-4. **Generator**: Produces the final response using the retrieved information.
+1. **Query Router**: Decides whether to use the local vectorstore or perform a web search based on the input question.
+2. **Retriever**: Fetches relevant documents from the chosen source (vectorstore or web).
+3. **Document Grader**: Evaluates the relevance of retrieved documents.
+4. **Generator**: Produces a response using the retrieved information.
+5. **Generation Grader**: Assesses the generated response for hallucinations and relevance.
 
-Let's dive into how these components work together, with a special focus on the web search functionality.
-
-## The Workflow
-
-The system's workflow is defined using a `StateGraph` from LangGraph. Here's a high-level overview:
-
-1. The retriever fetches potentially relevant documents.
-2. The grader evaluates these documents for relevance.
-3. If there aren't enough relevant documents, a web search is performed.
-4. Finally, the generator creates a response using the collected information.
+The workflow is defined using a `StateGraph` from LangGraph, allowing for complex, conditional paths through the system.
 
 ## Code Breakdown
 
-Let's look at some key parts of the implementation:
+Let's examine the key parts of our Adaptive RAG implementation:
 
-### Graph Definition
+### Graph Definition (graph.py)
 
 ```python
 workflow = StateGraph(GraphState)
@@ -41,7 +36,9 @@ workflow.add_node(GRADE_DOCS, grading_node)
 workflow.add_node(GENERATE, generate_node)
 workflow.add_node(WEBSEARCH, websearch_node)
 
-workflow.set_entry_point(RETRIEVER)
+workflow.set_conditional_entry_point(
+    query_router_conditional_edge, {VECTORSTORE: RETRIEVER, WEBSEARCH: WEBSEARCH}
+)
 
 workflow.add_edge(RETRIEVER, GRADE_DOCS)
 workflow.add_conditional_edges(
@@ -55,108 +52,90 @@ workflow.add_conditional_edges(
 
 workflow.add_edge(WEBSEARCH, GENERATE)
 workflow.add_edge(GENERATE, END)
+
+workflow.add_conditional_edges(
+    GENERATE,
+    grade_generation_grounded_in_documents_and_question,
+    {NOT_SUPPORTED: GENERATE, NOT_USEFUL: WEBSEARCH, USEFUL: END},
+)
 ```
 
-This code sets up the workflow, defining the nodes and their connections. The conditional edge after grading determines whether to proceed to web search or generation.
+This graph structure allows for adaptive routing and multiple paths through the system, a key aspect of Adaptive RAG.
 
-### Retriever
+### Query Routing (router.py)
 
 ```python
-def retriever_node(state: GraphState) -> Dict[str, Any]:
+def query_router_conditional_edge(state: GraphState) -> str:
     question = state["question"]
-    documents = retriever.invoke(question)
-    return {"question": question, "documents": documents}
+    query_router_result = query_router_prompt_chain.invoke(input={"question": question})
+    destination = query_router_result.destination
+    print("Query router destination is {}".format(destination))
+    return destination
 ```
 
-The retriever takes the input question and fetches relevant documents from the local knowledge base.
+This function demonstrates the adaptive nature of the system by routing queries to either the local vectorstore or web search based on the content of the question.
 
-### Grader
+### State Management (state.py)
 
 ```python
-def grading_node(state: GraphState) -> Dict[str, Any]:
-    filter_docs = []
-    websearch = False
-    
-    grade_template = ChatPromptTemplate.from_messages(
-        [
-            ("system", system),
-            ("human", "user question: {question}, retrieved document: {document}"),
-        ]
+class GraphState(TypedDict):
+    question: str
+    generation: str
+    websearch: bool
+    documents: List[str]
+
+class QueryRouter(BaseModel):
+    destination: Literal["VECTORSTORE", "WEBSEARCH"] = Field(
+        description="Given a question choose to route it to vectorstore or websearch"
     )
-    grade = llm.with_structured_output(Grade)
-    template = grade_template | grade
-    
-    for doc in documents:
-        result = template.invoke({"question": question, "document": doc.page_content})
-        if result.bool_score == "yes":
-            filter_docs.append(doc)
-
-    if len(filter_docs) < 2:
-        websearch = True
-
-    return {"question": question, "documents": filter_docs, "websearch": websearch}
 ```
 
-The grader evaluates each document and decides if a web search is needed. If fewer than two relevant documents are found, it triggers a web search.
+These classes define the state of the graph and the structure for the query router's decision, enabling the adaptive behavior of the system.
 
-### Web Search
+## Key Benefits of Adaptive RAG
 
-```python
-def websearch_node(state: GraphState) -> Dict[str, Any]:
-    question = state["question"]
+1. **Improved Accuracy**: By evaluating its own outputs and choosing the most appropriate information source, Adaptive RAG can reduce hallucinations and irrelevant responses.
 
-    search = TavilySearchAPIWrapper()
-    result = search.results(query=question, max_results=3)
-    documents = []
-    [
-        documents.append(
-            Document(page_content=doc["content"], metadata={"source": doc["url"]})
-        )
-        for doc in result
-    ]
-    return {"question": question, "documents": documents}
-```
+2. **Flexibility**: The system can adapt to different types of queries, using local knowledge when appropriate and falling back to web search when needed.
 
-The web search component uses the TavilySearchAPIWrapper to perform an online search when local documents are insufficient. It retrieves up to three results and formats them as Document objects.
+3. **Iterative Improvement**: Through multiple generation attempts, the system can refine its responses.
 
-### Generator
-
-```python
-def generate_node(state: GraphState) -> Dict[str, Any]:
-    question = state["question"]
-    documents = state["documents"]
-    generation = generated_prompt_chain.invoke(
-        {"context": documents, "question": question}
-    )
-    return {"documents": documents, "question": question, "generation": generation}
-```
-
-The generator creates the final response using the retrieved documents (either from local retrieval or web search) and the original question.
+4. **Transparency**: The self-evaluation process provides insight into the system's decision-making.
 
 ## Test Scenarios
 
-Let's explore a few test scenarios to see how our corrective RAG system might behave:
+To demonstrate the capabilities of our Adaptive RAG system, we can consider the following test scenarios:
 
-1. **Scenario: Recent Event**
-   - Question: "What were the key outcomes of the 2024 UN Climate Change Conference?"
-   - Expected Behavior: The local retriever might not have up-to-date information. The grader would likely trigger a web search, allowing the system to fetch and use the latest information from reliable online sources.
+1. **Local Knowledge Query**: 
+   Input: "What are common Java interview questions?"
+   Expected Behavior: The query router should direct this to the VECTORSTORE, as it's within the system's local knowledge.
 
-2. **Scenario: Technical Query with Sufficient Local Data**
-   - Question: "What's the difference between String, StringBuffer, and StringBuilder in Java?"
-   - Expected Behavior: The local retriever would likely find relevant documents. The grader would approve these documents, and the generator would create a response without needing a web search.
+2. **Web Search Query**:
+   Input: "What are the latest developments in quantum computing?"
+   Expected Behavior: The query router should direct this to WEBSEARCH, as it's likely outside the system's local knowledge.
 
-3. **Scenario: Ambiguous Query**
-   - Question: "Tell me about the latest advancements in quantum computing."
-   - Expected Behavior: The local retriever might find some relevant documents, but the grader might determine that more information is needed. This could trigger a web search to supplement the local information with the most recent advancements.
+3. **Ambiguous Query**:
+   Input: "How do I prepare a risotto?"
+   Expected Behavior: This could go either way. If cooking recipes are in the vectorstore, it should go there. Otherwise, it should route to WEBSEARCH.
 
-4. **Scenario: Fact-Checking**
-   - Question: "Is it true that drinking hot water can cure COVID-19?"
-   - Expected Behavior: The system should first check local sources for factual information. If insufficient or outdated information is found, it would trigger a web search to retrieve the latest scientific consensus, likely debunking this myth.
+4. **Iterative Improvement**:
+   Input: "Explain the concept of polymorphism in object-oriented programming."
+   Expected Behavior: The system might first retrieve information from the vectorstore. If the generation is graded as NOT_SUPPORTED or NOT_USEFUL, it should attempt to regenerate or perform a web search for more information.
+
+To run these tests, you can use the provided main block in graph.py:
+
+```python
+if __name__ == "__main__":
+    res = graph.invoke(input={"question": "how to calculate XIRR in mutual funds?"})
+    print(res)
+```
+
+Replace the question with each of the test scenarios to observe the system's behavior.
 
 ## Conclusion
 
-This enhanced corrective RAG system demonstrates how we can create more intelligent, self-correcting, and up-to-date AI systems. By incorporating multiple stages of retrieval, evaluation, web search, and generation, we can produce more accurate and reliable responses to user queries, even for rapidly changing or specialized topics.
+Adaptive RAG represents a significant advancement in our quest for more reliable, accurate, and flexible AI systems. By incorporating query routing, self-reflection, and self-improvement mechanisms, we're moving closer to AI that can critically evaluate its own outputs, adapt its approach when needed, and choose the most appropriate information sources.
 
-The use of LangGraph allows for a flexible and modular design, making it easy to add or modify components as needed. The addition of web search capabilities significantly enhances the system's ability to provide current and comprehensive information.
+This implementation, built with LangGraph, demonstrates the power of flexible, modular design in creating sophisticated AI workflows. As we continue to refine and expand on these concepts, we open up exciting possibilities for AI systems that are not just more accurate, but also more adaptable and trustworthy.
 
-As AI continues to evolve, systems like this will play a crucial role in bridging the gap between static knowledge bases and dynamic, real-time information retrieval. They open up exciting possibilities for creating increasingly sophisticated AI systems that can handle complex tasks with improved accuracy, reliability, and timeliness.
+The journey towards more intelligent and flexible AI is ongoing, and Adaptive RAG is a promising step in that direction. It challenges us to think not just about how AI can process information, but how it can question its own processes and adapt to different types of queries and information needs.

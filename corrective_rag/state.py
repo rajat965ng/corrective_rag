@@ -1,6 +1,8 @@
-from typing import TypedDict, List
+from typing import TypedDict, List, Literal
 
 from pydantic.v1 import BaseModel, Field
+
+from corrective_rag.constant import VECTORSTORE
 
 
 class GraphState(TypedDict):
@@ -27,4 +29,10 @@ class GenerationAnswerGrade(BaseModel):
     bool_score: str = Field(
         description="Check whether the generation retrieved are relevant to the question asked."
         "If they are relevant then answer 'yes', else 'no'."
+    )
+
+
+class QueryRouter(BaseModel):
+    destination: Literal["VECTORSTORE", "WEBSEARCH"] = Field(
+        description="Given a question choose to route it to vectorstore or websearch"
     )
